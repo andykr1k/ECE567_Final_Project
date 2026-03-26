@@ -9,10 +9,9 @@ For packaging reasons, this is separate to the [main repository](https://github.
 
 # Installation
 ```commandline
-git clone https://github.com/MichaelTMatthews/Craftax_Baselines.git
-cd Craftax_Baselines
-pip install -r requirements.txt -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-pre-commit install
+git clone https://github.com/andykr1k/ECE567_Final_Project
+cd ECE567_Final_Project/craftax_baselines
+pip install -r requirements.txt
 ```
 
 # Run Experiments
