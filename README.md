@@ -1,4 +1,3 @@
-```markdown
 # ECE567 Final Project
 
 This repository contains materials, code, and resources for the ECE567 Final Project.
@@ -67,4 +66,3 @@ To keep the project organized and collaborative, please follow this workflow:
 - Keep PRs focused and minimal when possible  
 - Use consistent naming and formatting across the repo  
 - Update documentation when adding new features  
-```
