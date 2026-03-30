@@ -18,17 +18,17 @@ pip install -r requirements.txt
 
 ### PPO
 ```commandline
-python ppo.py
+python ppo.py --seed 42
 ```
 
 ### PPO-RNN
 ```commandline
-python ppo_rnn.py
+python ppo_rnn.py --seed 42 --save_policy --total_timesteps 5e9 --wandb_project craftax_baselines_new_jax
 ```
 
 ### ICM
 ```commandline
-python ppo.py --train_icm
+python ppo.py --train_icm --seed 42 --save_policy --total_timesteps 5e9 --wandb_project craftax_baselines_new_jax
 ```
 
 ### E3B
@@ -38,7 +38,7 @@ python ppo.py --train_icm --use_e3b --icm_reward_coeff 0
 
 ### RND
 ```commandline
-python ppo_rnd.py
+python ppo_rnd.py --seed 42 --save_policy --total_timesteps 5e9 --wandb_project craftax_baselines_new_jax
 ```
 
 # Visualisation
