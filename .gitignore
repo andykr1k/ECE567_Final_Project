@@ -3,6 +3,8 @@ wandb/
 res/
 runs/
 
+.agents/
+
 play_data
 
 # Byte-compiled / optimized / DLL files
