@@ -31,7 +31,7 @@ SMOOTHING_WINDOW = 200
 MAIN_RUNS = {
     'PPO': 'Craftax-PPO-v1-1000M',
     'PPO-RNN': 'Craftax-Symbolic-v1-PPO_RNN-1000M',
-    'PPO-ICM': 'Craftax-ICM-v1-1000M',
+    'PPO-ICM': 'Craftax-Symbolic-v1-ICM-1000M',
     'PPO-E3B': 'Craftax-ICM-E3B-v1-1000M',
     'PPO-RND': 'Craftax-Symbolic-v1-PPO_RND-1000M'
 }

@@ -28,12 +28,12 @@ python ppo_rnn.py --seed 42 --save_policy --total_timesteps 5e9 --wandb_project 
 
 ### ICM
 ```commandline
-python ppo.py --train_icm --seed 42 --save_policy --total_timesteps 5e9 --wandb_project craftax_baselines_new_jax
+python ppo.py --train_icm --seed 42 --save_policy --total_timesteps 5e9 --wandb_project craftax_baselines_new_jax --icm_reward_coeff 0.001
 ```
 
 ### E3B
 ```commandline
-python ppo.py --train_icm --use_e3b --icm_reward_coeff 0
+python ppo.py --train_icm --use_e3b --icm_reward_coeff 0.001
 ```
 
 ### RND
