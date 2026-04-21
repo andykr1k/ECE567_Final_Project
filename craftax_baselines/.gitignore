@@ -2,6 +2,7 @@ tmp/
 wandb/
 res/
 runs/
+cache/
 
 play_data
 
