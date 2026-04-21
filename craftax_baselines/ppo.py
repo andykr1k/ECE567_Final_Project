@@ -31,6 +31,7 @@ from wrappers import (
     OptimisticResetVecEnvWrapper,
     BatchEnvWrapper,
     AutoResetEnvWrapper,
+    ActionHistoryWrapper,
 )
 
 # Code adapted from the original implementation made by Chris Lu
@@ -47,7 +48,13 @@ class Transition(NamedTuple):
     log_prob: jnp.ndarray
     obs: jnp.ndarray
     next_obs: jnp.ndarray
+    policy_obs: jnp.ndarray
     info: jnp.ndarray
+
+
+def augment_symbolic_observation(obs, action_history):
+    action_history = action_history.reshape((action_history.shape[0], -1))
+    return jnp.concatenate([obs, action_history.astype(obs.dtype)], axis=-1)
 
 
 def make_train(config):
@@ -62,6 +69,14 @@ def make_train(config):
         config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]
     )
     env_params = env.default_params
+    is_symbolic = "Symbolic" in config["ENV_NAME"]
+    use_action_history = is_symbolic and config["ACTION_HISTORY_LEN"] > 0
+    num_actions = env.action_space(env_params).n
+    base_obs_shape = env.observation_space(env_params).shape
+    action_history_dim = config["ACTION_HISTORY_LEN"] * num_actions
+    policy_obs_shape = (
+        (base_obs_shape[0] + action_history_dim,) if is_symbolic else base_obs_shape
+    )
 
     env = LogWrapper(env)
     if config["USE_OPTIMISTIC_RESETS"]:
@@ -74,6 +89,14 @@ def make_train(config):
         env = AutoResetEnvWrapper(env)
         env = BatchEnvWrapper(env, num_envs=config["NUM_ENVS"])
 
+    if use_action_history:
+        env = ActionHistoryWrapper(
+            env,
+            num_envs=config["NUM_ENVS"],
+            num_actions=num_actions,
+            history_len=config["ACTION_HISTORY_LEN"],
+        )
+
     def linear_schedule(count):
         frac = (
             1.0
@@ -84,15 +107,20 @@ def make_train(config):
 
     def train(rng):
         # INIT NETWORK
-        if "Symbolic" in config["ENV_NAME"]:
-            network = ActorCritic(env.action_space(env_params).n, config["LAYER_SIZE"])
+        if is_symbolic:
+            network = ActorCritic(
+                num_actions,
+                config["LAYER_SIZE"],
+                input_dim=policy_obs_shape[0],
+                activation=config["ACTIVATION"],
+            )
         else:
             network = ActorCriticConv(
-                env.action_space(env_params).n, config["LAYER_SIZE"]
+                num_actions, config["LAYER_SIZE"]
             )
 
         rng, _rng = jax.random.split(rng)
-        init_x = jnp.zeros((1, *env.observation_space(env_params).shape))
+        init_x = jnp.zeros((1, *policy_obs_shape))
         network_params = network.init(_rng, init_x)
         if config["ANNEAL_LR"]:
             tx = optax.chain(
@@ -216,8 +244,13 @@ def make_train(config):
                 ) = runner_state
 
                 # SELECT ACTION
+                policy_obs = (
+                    augment_symbolic_observation(last_obs, env_state.action_history)
+                    if use_action_history
+                    else last_obs
+                )
                 rng, _rng = jax.random.split(rng)
-                pi, value = network.apply(train_state.params, last_obs)
+                pi, value = network.apply(train_state.params, policy_obs)
                 action = pi.sample(seed=_rng)
                 log_prob = pi.log_prob(action)
 
@@ -289,6 +322,7 @@ def make_train(config):
                     log_prob=log_prob,
                     obs=last_obs,
                     next_obs=obsv,
+                    policy_obs=policy_obs,
                     info=info,
                 )
                 runner_state = (
@@ -314,7 +348,12 @@ def make_train(config):
                 rng,
                 update_step,
             ) = runner_state
-            _, last_val = network.apply(train_state.params, last_obs)
+            policy_last_obs = (
+                augment_symbolic_observation(last_obs, env_state.action_history)
+                if use_action_history
+                else last_obs
+            )
+            _, last_val = network.apply(train_state.params, policy_last_obs)
 
             def _calculate_gae(traj_batch, last_val):
                 def _get_advantages(gae_and_next_value, transition):
@@ -350,7 +389,7 @@ def make_train(config):
                     # Policy/value network
                     def _loss_fn(params, traj_batch, gae, targets):
                         # RERUN NETWORK
-                        pi, value = network.apply(params, traj_batch.obs)
+                        pi, value = network.apply(params, traj_batch.policy_obs)
                         log_prob = pi.log_prob(traj_batch.action)
 
                         # CALCULATE VALUE LOSS
@@ -705,6 +744,7 @@ if __name__ == "__main__":
         "--use_optimistic_resets", action=argparse.BooleanOptionalAction, default=True
     )
     parser.add_argument("--optimistic_reset_ratio", type=int, default=16)
+    parser.add_argument("--action_history_len", type=int, default=5)
 
     # EXPLORATION
     parser.add_argument("--exploration_update_epochs", type=int, default=4)

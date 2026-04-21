@@ -161,6 +161,12 @@ class LogEnvState:
     timestep: int
 
 
+@struct.dataclass
+class ActionHistoryEnvState:
+    env_state: Any
+    action_history: jnp.ndarray
+
+
 class LogWrapper(GymnaxWrapper):
     """Log the episode returns and lengths."""
 
@@ -201,3 +207,50 @@ class LogWrapper(GymnaxWrapper):
         info["timestep"] = state.timestep
         info["returned_episode"] = done
         return obs, state, reward, done, info
+
+
+class ActionHistoryWrapper(GymnaxWrapper):
+    """Tracks a fixed-size one-hot action history alongside the batched env state."""
+
+    def __init__(self, env, num_envs: int, num_actions: int, history_len: int = 5):
+        super().__init__(env)
+        self.num_envs = num_envs
+        self.num_actions = num_actions
+        self.history_len = history_len
+
+    @partial(jax.jit, static_argnums=(0, 2))
+    def reset(self, key: chex.PRNGKey, params=None):
+        obs, env_state = self._env.reset(key, params)
+        action_history = jnp.zeros(
+            (self.num_envs, self.history_len, self.num_actions), dtype=obs.dtype
+        )
+        return obs, ActionHistoryEnvState(env_state, action_history)
+
+    @partial(jax.jit, static_argnums=(0, 4))
+    def step(
+        self,
+        key: chex.PRNGKey,
+        state: ActionHistoryEnvState,
+        action: Union[int, float],
+        params=None,
+    ):
+        obs, env_state, reward, done, info = self._env.step(
+            key, state.env_state, action, params
+        )
+
+        action_one_hot = jax.nn.one_hot(
+            action, num_classes=self.num_actions, dtype=obs.dtype
+        )
+        shifted_history = jnp.roll(state.action_history, shift=-1, axis=1)
+        updated_history = jax.lax.dynamic_update_slice(
+            shifted_history,
+            action_one_hot[:, None, :],
+            (0, self.history_len - 1, 0),
+        )
+        action_history = jnp.where(
+            done[:, None, None],
+            jnp.zeros_like(updated_history),
+            updated_history,
+        )
+
+        return obs, ActionHistoryEnvState(env_state, action_history), reward, done, info

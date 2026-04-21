@@ -19,6 +19,24 @@ import orbax.checkpoint as ocp
 from models.actor_critic import ActorCriticConv, ActorCritic
 
 
+def augment_symbolic_observation(obs, action_history):
+    action_history = action_history.reshape((action_history.shape[0], -1))
+    return jnp.concatenate([obs, action_history.astype(obs.dtype)], axis=-1)
+
+
+def update_action_history(action_history, action, done, num_actions):
+    shifted_history = jnp.roll(action_history, shift=-1, axis=1)
+    action_one_hot = jax.nn.one_hot(
+        action, num_classes=num_actions, dtype=action_history.dtype
+    )
+    updated_history = jax.lax.dynamic_update_slice(
+        shifted_history,
+        action_one_hot[:, None, :],
+        (0, action_history.shape[1] - 1, 0),
+    )
+    return jnp.where(done[:, None, None], jnp.zeros_like(updated_history), updated_history)
+
+
 def main(args):
 
     with open(os.path.join(args.path, "config.yaml")) as f:
@@ -30,6 +48,7 @@ def main(args):
                 config[key] = value["value"]
 
     config["NUM_ENVS"] = 1
+    action_history_len = config.get("ACTION_HISTORY_LEN", 0)
 
     orbax_checkpointer = PyTreeCheckpointer()
     options = CheckpointManagerOptions(max_to_keep=1, create=True)
@@ -44,7 +63,13 @@ def main(args):
         from craftax.craftax.constants import Action
 
         env = CraftaxSymbolicEnv(CraftaxSymbolicEnv.default_static_params())
-        network = ActorCritic(len(Action), config["LAYER_SIZE"])
+        network = ActorCritic(
+            len(Action),
+            config["LAYER_SIZE"],
+            input_dim=env.observation_space(env.default_params).shape[0]
+            + action_history_len * len(Action),
+            activation=config.get("ACTIVATION", "tanh"),
+        )
     elif config["ENV_NAME"] == "Craftax-Pixels-v1":
         from craftax.craftax.envs.craftax_pixels_env import CraftaxPixelsEnv
         from craftax.craftax.constants import Action
@@ -60,7 +85,13 @@ def main(args):
         env = CraftaxClassicSymbolicEnv(
             CraftaxClassicSymbolicEnv.default_static_params()
         )
-        network = ActorCritic(len(Action), config["LAYER_SIZE"])
+        network = ActorCritic(
+            len(Action),
+            config["LAYER_SIZE"],
+            input_dim=env.observation_space(env.default_params).shape[0]
+            + action_history_len * len(Action),
+            activation=config.get("ACTIVATION", "tanh"),
+        )
         is_classic = True
     elif config["ENV_NAME"] == "Craftax-Classic-Pixels-v1":
         from craftax.craftax_classic.envs.craftax_pixels_env import (
@@ -76,8 +107,16 @@ def main(args):
 
     env = AutoResetEnvWrapper(env)
     env_params = env.default_params
-
-    init_x = jnp.zeros((config["NUM_ENVS"], *env.observation_space(env_params).shape))
+    obs_shape = env.observation_space(env_params).shape
+    if "Symbolic" in config["ENV_NAME"]:
+        init_x = jnp.zeros(
+            (
+                config["NUM_ENVS"],
+                obs_shape[0] + action_history_len * env.action_space(env_params).n,
+            )
+        )
+    else:
+        init_x = jnp.zeros((config["NUM_ENVS"], *obs_shape))
 
     rng = jax.random.PRNGKey(np.random.randint(2**31))
     rng, _rng, __rng = jax.random.split(rng, 3)
@@ -99,6 +138,16 @@ def main(args):
 
     obs, env_state = env.reset(key=__rng)
     done = 0
+    action_history = None
+    if "Symbolic" in config["ENV_NAME"] and action_history_len > 0:
+        action_history = jnp.zeros(
+            (
+                config["NUM_ENVS"],
+                action_history_len,
+                env.action_space(env_params).n,
+            ),
+            dtype=obs.dtype,
+        )
 
     if is_classic:
         from craftax.craftax_classic.play_craftax_classic import CraftaxRenderer
@@ -113,7 +162,12 @@ def main(args):
         done = np.array([done], dtype=bool)
         obs = jnp.expand_dims(obs, axis=0)
 
-        pi, value = network.apply(train_state.params, obs)
+        policy_obs = (
+            augment_symbolic_observation(obs, action_history)
+            if action_history is not None
+            else obs
+        )
+        pi, value = network.apply(train_state.params, policy_obs)
         rng, _rng = jax.random.split(rng)
         action = pi.sample(seed=_rng)[0]
         # action = jnp.argmax(pi.probs[0, 0])
@@ -124,6 +178,13 @@ def main(args):
             obs, env_state, reward, done, info = env.step(
                 _rng, env_state, action, env_params
             )
+            if action_history is not None:
+                action_history = update_action_history(
+                    action_history,
+                    jnp.expand_dims(action, axis=0),
+                    jnp.asarray([done]),
+                    env.action_space(env_params).n,
+                )
             new_achievements = env_state.achievements
             print_new_achievements(Achievement, old_achievements, new_achievements)
             if done:

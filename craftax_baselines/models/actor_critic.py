@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import flax.linen as nn
 import numpy as np
 from flax.linen.initializers import constant, orthogonal
-from typing import Sequence
+from typing import Optional, Sequence
 
 import distrax
 
@@ -129,10 +129,16 @@ class ActorCriticConv(nn.Module):
 class ActorCritic(nn.Module):
     action_dim: Sequence[int]
     layer_width: int
+    input_dim: Optional[int] = None
     activation: str = "tanh"
 
     @nn.compact
     def __call__(self, x):
+        if self.input_dim is not None and x.shape[-1] != self.input_dim:
+            raise ValueError(
+                f"Expected observation width {self.input_dim}, got {x.shape[-1]}"
+            )
+
         if self.activation == "relu":
             activation = nn.relu
         else:
