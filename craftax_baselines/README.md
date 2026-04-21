@@ -90,6 +90,31 @@ python ppo_curl.py \
     --total_timesteps 5e9
 ```
 
+```
+python ppo_curl.py \
+    --wandb_project craftax_ppo_curl \
+    --seed 43 \
+    --use_curl \
+    --curl_frame_delay 5 \
+    --total_timesteps 5e9
+```
+
+### Random Latent Exploration
+```
+python ppo_rle.py \
+    --wandb_project craftax_ppo_curl \
+    --rle_alpha 0.1 \
+    --rle_resample_freq 128 \
+    --total_timesteps 5e9 \
+    --seed 42
+```
+
+```
+python ppo_rle_2.py \
+    --wandb_project craftax_rle_2 \
+    --seed 42
+```
+
 # COnv
 ```
 python ppo.py --seed 42 --env_name "Craftax-Pixels-v1"

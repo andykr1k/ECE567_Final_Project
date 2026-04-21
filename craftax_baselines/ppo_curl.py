@@ -58,6 +58,7 @@ class Transition(NamedTuple):
     log_prob: jnp.ndarray
     obs: jnp.ndarray
     next_obs: jnp.ndarray
+    delayed_obs: jnp.ndarray
     info: jnp.ndarray
 
 def unflatten_obs(obs: chex.Array) -> tuple[chex.Array, chex.Array]:
@@ -300,7 +301,6 @@ def make_train(config):
             tx=tx,
         )
 
-        # Exploration state
         ex_state = {
             "icm_encoder": None,
             "icm_forward": None,
@@ -417,6 +417,14 @@ def make_train(config):
         rng, _rng = jax.random.split(rng)
         obsv, env_state = env.reset(_rng, env_params)
 
+        m = config.get("CURL_FRAME_DELAY", 3)
+        
+        # Use max(1, m) so JAX doesn't crash if m=0. 
+        # (If m=0, the buffer exists but we just ignore it later).
+        ex_state["obs_history"] = jnp.repeat(
+            jnp.expand_dims(obsv, axis=0), max(1, m), axis=0
+        )
+
         # TRAIN LOOP
         def _update_step(runner_state, unused):
             # COLLECT TRAJECTORIES
@@ -453,6 +461,25 @@ def make_train(config):
                 )
 
                 reward_i = jnp.zeros(config["NUM_ENVS"])
+
+                # 1. Grab the delayed observation (oldest in buffer)
+                delayed_obs = ex_state["obs_history"][0]
+                
+                # 2. Shift the buffer to make room for the new observation
+                new_history = jnp.roll(ex_state["obs_history"], shift=-1, axis=0)
+                
+                # 3. Insert the current 'last_obs' at the end of the buffer
+                new_history = new_history.at[-1].set(last_obs)
+                
+                # 4. Handle episode resets! If an env is done, we don't want to contrast 
+                # the new episode with the old one. Overwrite the history for that env 
+                # with the newly reset observation.
+                reset_history = jnp.repeat(jnp.expand_dims(obsv, axis=0), m, axis=0)
+                ex_state["obs_history"] = jnp.where(
+                    done[None, :, None], # broadcast across the buffer and obs dimensions
+                    reset_history, 
+                    new_history
+                )
 
                 if config["TRAIN_ICM"]:
                     latent_obs = ex_state["icm_encoder"].apply_fn(
@@ -513,6 +540,7 @@ def make_train(config):
                     reward_e=reward_e,
                     log_prob=log_prob,
                     obs=last_obs,
+                    delayed_obs=delayed_obs,
                     next_obs=obsv,
                     info=info,
                 )
@@ -696,7 +724,12 @@ def make_train(config):
                         aug_keys_k = jax.random.split(rng_k, batch_size)
                         
                         aug_obs_q = batched_curl_augment(aug_keys_q, traj_batch.obs)
-                        aug_obs_k = batched_curl_augment(aug_keys_k, traj_batch.obs)
+                        if config.get("CURL_FRAME_DELAY", 0) == 0:
+                            base_obs_k = traj_batch.obs
+                        else:
+                            base_obs_k = traj_batch.delayed_obs
+                        
+                        aug_obs_k = batched_curl_augment(aug_keys_k, base_obs_k)
                     else:
                         # Dummy fallbacks so the function signature remains consistent
                         aug_obs_q = traj_batch.obs 
@@ -1156,6 +1189,7 @@ if __name__ == "__main__":
     parser.add_argument("--curl_lr", type=float, default=2e-4)
     parser.add_argument("--curl_momentum", type=float, default=0.999)
     parser.add_argument("--curl_coef", type=float, default=1.0)
+    parser.add_argument("--curl_frame_delay", type=int, default=0)
     
 
     args, rest_args = parser.parse_known_args(sys.argv[1:])
