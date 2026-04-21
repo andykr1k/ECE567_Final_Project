@@ -41,5 +41,59 @@ python ppo.py --train_icm --use_e3b --icm_reward_coeff 0.001
 python ppo_rnd.py --seed 42 --save_policy --total_timesteps 5e9 --wandb_project craftax_baselines_new_jax
 ```
 
+### ICM Inv Only Tests
+Regular ICM
+```commandline
+python ppo_inv_only_icm.py \
+    --wandb_project craftax_inv_only_icm \
+    --train_icm \
+    --icm_reward_coeff 1.0 \
+    --icm_inv_only \
+```
+
+E3B
+```commandline
+python ppo_inv_only_icm.py \
+    --wandb_project craftax_inv_only_icm \
+    --train_icm \
+    --e3b_reward_coeff 0.001 \
+    --icm_reward_coeff 0.0 \
+    --use_e3b \
+    --icm_inv_only \
+```
+
+### CURL
+```
+python ppo_curl.py \
+    --wandb_project craftax_ppo_curl \
+    --seed 43 \
+    --use_curl \
+    --total_timesteps 5e9
+```
+
+```
+python ppo_curl.py \
+    --wandb_project craftax_ppo_curl \
+    --seed 43 \
+    --total_timesteps 5e9
+```
+
+```
+python ppo_curl.py \
+    --wandb_project craftax_ppo_curl \
+    --seed 43 \
+    --use_curl \
+    --train_icm \
+    --e3b_reward_coeff 0.001 \
+    --icm_reward_coeff 0.0 \
+    --use_e3b \
+    --total_timesteps 5e9
+```
+
+# COnv
+```
+python ppo.py --seed 42 --env_name "Craftax-Pixels-v1"
+```
+
 # Visualisation
 You can save trained policies with the `--save_policy` flag.  These can then be viewed with the `view_ppo_agent` script (pass in the path up to the `files` directory).

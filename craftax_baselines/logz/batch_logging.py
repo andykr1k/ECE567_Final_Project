@@ -20,6 +20,9 @@ def create_log_dict(info, config):
             to_log[k] = v
             sum_achievements += v / 100.0
 
+        if "train/" in k.lower():
+            to_log[k] = v
+
     to_log["achievements"] = sum_achievements
 
     if config.get("TRAIN_ICM") or config.get("USE_RND"):
@@ -62,7 +65,7 @@ def batch_log(update_step, log, config):
                     "e_mean",
                     "e_std",
                     "rnd_loss",
-                ]:
+                ] or "train/" in key.lower():
                     agg_logs[key] = np.mean(agg)
                 else:
                     agg_logs[key] = np.array(agg)
